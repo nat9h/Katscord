@@ -1,0 +1,47 @@
+{
+	"name": "katsucord",
+	"version": "1.0.0",
+	"main": "src/index.js",
+	"type": "module",
+	"scripts": {
+		"start": "node --env-file=.env src/index.js",
+		"dev": "node --watch --env-file=.env src/index.js",
+		"prettier": "npx prettier . --write",
+		"pm2": "pm2 start ecosystem.config.cjs",
+		"lint": "eslint"
+	},
+	"keywords": [
+		"discord",
+		"discordjs"
+	],
+	"author": "Natsyn",
+	"license": "MIT",
+	"description": "Discord Selfbot",
+	"dependencies": {
+		"@dank074/discord-video-stream": "^6.0.0",
+		"@discordjs/voice": "^0.19.2",
+		"axios": "^1.15.1",
+		"discord.js-selfbot-v13": "^3.7.1",
+		"file-type": "^22.0.1",
+		"opusscript": "^0.0.8",
+		"spotify-url-info": "^3.3.0"
+	},
+	"imports": {
+		"#/*": "./*",
+		"#core/*": "./src/core/*.js",
+		"#lib/*": "./src/lib/*.js",
+		"#infra/*": "./src/infra/*.js",
+		"#utils/*": "./src/utils/*.js",
+		"#plugins/*": "./src/plugins/*.js"
+	},
+	"devDependencies": {
+		"@eslint/js": "^9.39.4",
+		"@ianvs/prettier-plugin-sort-imports": "^4.7.1",
+		"eslint-config-prettier": "^10.1.8",
+		"eslint-import-resolver-alias": "^1.1.2",
+		"eslint-plugin-import": "^2.32.0",
+		"eslint-plugin-prettier": "^5.5.5",
+		"globals": "^17.5.0",
+		"prettier": "^3.8.3"
+	}
+}
