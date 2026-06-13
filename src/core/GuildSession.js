@@ -24,14 +24,12 @@ export default class GuildSession {
 
 		this.videoTransport = new VideoTransport({
 			streamer: this.streamer,
-			client: ctx.client,
 			ytdlpService: ctx.ytdlpService,
 			resolveTarget,
 		});
 
 		this.audioTransport = new AudioTransport({
 			streamer: this.streamer,
-			client: ctx.client,
 			ytdlpService: ctx.ytdlpService,
 			resolveTarget,
 		});

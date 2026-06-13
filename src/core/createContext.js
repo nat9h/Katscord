@@ -5,18 +5,17 @@ import TTLCache from "#core/TTLCache";
 import { MediaProbeService } from "#infra/services/MediaProbeService";
 import { SpotifyService } from "#infra/services/SpotifyService";
 import { YtdlpService } from "#infra/services/YtdlpService";
-import { APIRequest } from "#utils/API/request";
 import { createResponder } from "#utils/respond";
 import { Client } from "discord.js-selfbot-v13";
 
-const DEFAULT_SETTINGS = {
+const DEFAULTS = {
 	prefixes: ["!", "."],
 	ownerIds: [],
 	targets: {},
 	cacheTtlMs: 5 * 60_000,
 };
 
-const mediaProbeService = new MediaProbeService();
+const ID_PATTERN = /^\d{16,22}$/;
 
 export function createContext(config) {
 	const client = new Client();
@@ -24,7 +23,7 @@ export function createContext(config) {
 	const settings = new SettingsStore(
 		config.settingsPath ||
 			path.join(process.cwd(), "data", "settings.json"),
-		DEFAULT_SETTINGS
+		DEFAULTS
 	);
 
 	const spotifyService = new SpotifyService(
@@ -36,135 +35,74 @@ export function createContext(config) {
 		cookiesPath: config.cookiesPath || "./cookies.txt",
 	});
 
-	const services = {
-		api: APIRequest,
-		spotify: spotifyService,
-		ytdlp: ytdlpService,
-		mediaProbe: mediaProbeService,
+	const mediaProbeService = new MediaProbeService();
+
+	const caches = {
+		channels: new TTLCache(DEFAULTS.cacheTtlMs),
+		guilds: new TTLCache(DEFAULTS.cacheTtlMs),
 	};
 
 	const ctx = {
 		...config,
-		api: APIRequest,
 		client,
 		settings,
 		respond: createResponder(),
-		services,
-		mediaProbeService,
 		spotifyService,
 		ytdlpService,
+		mediaProbeService,
+		services: {
+			spotify: spotifyService,
+			ytdlp: ytdlpService,
+			mediaProbe: mediaProbeService,
+		},
+		caches,
 		userJoinTimes: new Map(),
 		runtime: {
-			pendingInteraction: null,
 			isShuttingDown: false,
-			lastCommandChannelId: null,
-			lastUsedPrefix: "!",
 		},
 		pluginManager: null,
-		caches: {
-			channels: new TTLCache(DEFAULT_SETTINGS.cacheTtlMs),
-			guilds: new TTLCache(DEFAULT_SETTINGS.cacheTtlMs),
-			users: new TTLCache(DEFAULT_SETTINGS.cacheTtlMs),
-			metadata: new TTLCache(10 * 60_000),
-		},
+		sessionManager: null,
 		logger: console,
 	};
 
 	ctx.sessionManager = new SessionManager(ctx);
 
-	ctx.bootstrap = async () => {
-		await ctx.settings.load();
-
-		if (Array.isArray(config.ownerIds) && config.ownerIds.length > 0) {
-			await ctx.settings.update((draft) => {
-				const merged = new Set([
-					...(draft.ownerIds || []),
-					...config.ownerIds,
-				]);
-
-				draft.ownerIds = [...merged].filter(Boolean);
-			});
-		}
-
-		ctx.sessionManager.loadFromSettings();
-	};
+	// --- Helpers ---
 
 	ctx.normalizeId = (value) => {
 		const id = String(value || "").trim();
-		return /^\d{16,22}$/.test(id) ? id : null;
+		return ID_PATTERN.test(id) ? id : null;
 	};
 
-	ctx.getCacheTtlMs = () =>
-		Number(ctx.settings.get("cacheTtlMs", DEFAULT_SETTINGS.cacheTtlMs)) ||
-		DEFAULT_SETTINGS.cacheTtlMs;
-
-	ctx.getPrefixes = () =>
-		ctx.settings.get("prefixes", DEFAULT_SETTINGS.prefixes);
-
-	ctx.getOwnerIds = () =>
-		ctx.settings.get("ownerIds", DEFAULT_SETTINGS.ownerIds);
-
-	ctx.getTargets = () =>
-		ctx.settings.get("targets", DEFAULT_SETTINGS.targets);
-
-	ctx.getGuildTarget = (guildId) => {
-		const id = String(guildId || "").trim();
-		if (!id) {
-			return null;
-		}
-
-		return ctx.getTargets()[id] || null;
-	};
+	ctx.getPrefixes = () => ctx.settings.get("prefixes", DEFAULTS.prefixes);
+	ctx.getOwnerIds = () => ctx.settings.get("ownerIds", DEFAULTS.ownerIds);
+	ctx.getTargets = () => ctx.settings.get("targets", DEFAULTS.targets);
+	ctx.getGuildTarget = (guildId) =>
+		ctx.getTargets()[String(guildId || "").trim()] || null;
 
 	ctx.isTrustedAuthor = (userId) => {
 		const trusted = new Set(
 			[ctx.client.user?.id, ...ctx.getOwnerIds()].filter(Boolean)
 		);
-
 		return trusted.has(String(userId));
 	};
 
-	ctx.fetchChannel = async (channelId, { force = false, ttlMs } = {}) => {
+	ctx.fetchChannel = async (channelId, { force = false } = {}) => {
 		const id = ctx.normalizeId(channelId);
 		if (!id) {
 			return null;
 		}
-
 		if (!force) {
-			const cached = ctx.caches.channels.get(id);
+			const cached = caches.channels.get(id);
 			if (cached) {
 				return cached;
 			}
 		}
-
-		return ctx.caches.channels.wrap(
+		return caches.channels.wrap(
 			id,
 			async () =>
-				ctx.client.channels.cache.get(id) ||
-				(await ctx.client.channels.fetch(id).catch(() => null)),
-			ttlMs || ctx.getCacheTtlMs()
-		);
-	};
-
-	ctx.fetchGuild = async (guildId, { force = false, ttlMs } = {}) => {
-		const id = ctx.normalizeId(guildId);
-		if (!id) {
-			return null;
-		}
-
-		if (!force) {
-			const cached = ctx.caches.guilds.get(id);
-			if (cached) {
-				return cached;
-			}
-		}
-
-		return ctx.caches.guilds.wrap(
-			id,
-			async () =>
-				ctx.client.guilds.cache.get(id) ||
-				(await ctx.client.guilds.fetch(id).catch(() => null)),
-			ttlMs || ctx.getCacheTtlMs()
+				client.channels.cache.get(id) ||
+				(await client.channels.fetch(id).catch(() => null))
 		);
 	};
 
@@ -174,22 +112,15 @@ export function createContext(config) {
 			return null;
 		}
 
-		const mentionId = ctx.client.user?.id;
+		const mentionId = client.user?.id;
 		const allPrefixes = [
 			...(mentionId ? [`<@${mentionId}>`, `<@!${mentionId}>`] : []),
 			...ctx.getPrefixes(),
 		]
-			.map((x) => String(x || "").trim())
 			.filter(Boolean)
 			.sort((a, b) => b.length - a.length);
 
-		const usedPrefix = allPrefixes.find(
-			(prefix) =>
-				raw === prefix ||
-				raw.startsWith(`${prefix} `) ||
-				raw.startsWith(prefix)
-		);
-
+		const usedPrefix = allPrefixes.find((p) => raw.startsWith(p));
 		if (!usedPrefix) {
 			return null;
 		}
@@ -199,22 +130,17 @@ export function createContext(config) {
 			return null;
 		}
 
-		const parts = body.split(/\s+/).filter(Boolean);
+		const parts = body.split(/\s+/);
 		const commandName = parts.shift()?.toLowerCase() || "";
 		if (!commandName) {
 			return null;
 		}
 
-		return {
-			usedPrefix,
-			commandName,
-			args: parts,
-			rawInput: body,
-		};
+		return { usedPrefix, commandName, args: parts, rawInput: body };
 	};
 
 	ctx.setDefaultPresence = () => {
-		ctx.client.user?.setPresence({
+		client.user?.setPresence({
 			activities: [{ name: "natsumiworld <3", type: "PLAYING" }],
 			status: "online",
 		});
@@ -225,12 +151,10 @@ export function createContext(config) {
 		if (!guildId) {
 			return true;
 		}
-
 		const target = ctx.getGuildTarget(guildId);
 		if (!target?.textChannelId) {
 			return true;
 		}
-
 		return message.channel.id === target.textChannelId;
 	};
 
@@ -239,15 +163,27 @@ export function createContext(config) {
 		if (!guildId) {
 			return null;
 		}
-
 		if (create) {
 			return ctx.sessionManager.ensureSession(
 				guildId,
 				ctx.getGuildTarget(guildId)
 			);
 		}
-
 		return ctx.sessionManager.getSession(guildId);
+	};
+
+	ctx.bootstrap = async () => {
+		await settings.load();
+
+		if (Array.isArray(config.ownerIds) && config.ownerIds.length > 0) {
+			await settings.update((draft) => {
+				draft.ownerIds = [
+					...new Set([...(draft.ownerIds || []), ...config.ownerIds]),
+				].filter(Boolean);
+			});
+		}
+
+		ctx.sessionManager.loadFromSettings();
 	};
 
 	return ctx;

@@ -18,12 +18,7 @@ if (!config.token) {
 }
 
 const bot = new BotApp(config);
-
-bot.start()
-	.then(() => {
-		console.log("Bot started successfully!");
-	})
-	.catch((error) => {
-		console.error("Failed to start bot:", error);
-		process.exit(1);
-	});
+bot.start().catch((error) => {
+	console.error("Failed to start bot:", error);
+	process.exit(1);
+});

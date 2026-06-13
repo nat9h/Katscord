@@ -29,7 +29,9 @@ const VIDEO_EXTENSIONS = new Set([
 ]);
 
 function stripQuotes(value) {
-	if (!value) return value;
+	if (!value) {
+		return value;
+	}
 
 	if (
 		(value.startsWith('"') && value.endsWith('"')) ||
@@ -42,7 +44,9 @@ function stripQuotes(value) {
 }
 
 export function normalizeLocalPath(input) {
-	if (!input || typeof input !== "string") return null;
+	if (!input || typeof input !== "string") {
+		return null;
+	}
 
 	let value = stripQuotes(input.trim());
 
@@ -59,14 +63,22 @@ export function normalizeLocalPath(input) {
 
 export function getLocalPathType(input) {
 	const resolved = normalizeLocalPath(input);
-	if (!resolved) return null;
+	if (!resolved) {
+		return null;
+	}
 
 	try {
-		if (!existsSync(resolved)) return null;
+		if (!existsSync(resolved)) {
+			return null;
+		}
 
 		const stats = statSync(resolved);
-		if (stats.isFile()) return "file";
-		if (stats.isDirectory()) return "directory";
+		if (stats.isFile()) {
+			return "file";
+		}
+		if (stats.isDirectory()) {
+			return "directory";
+		}
 		return null;
 	} catch {
 		return null;
@@ -88,7 +100,9 @@ export function isPlayableMediaFile(filePath) {
 
 export function inferLocalMode(filePath) {
 	const ext = path.extname(filePath).toLowerCase();
-	if (AUDIO_EXTENSIONS.has(ext)) return "audio";
+	if (AUDIO_EXTENSIONS.has(ext)) {
+		return "audio";
+	}
 	return "video";
 }
 

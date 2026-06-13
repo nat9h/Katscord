@@ -257,7 +257,7 @@ export default class PlaybackController {
 				sessionId,
 				seekSeconds,
 				volume: this.volume,
-				lowMotion: false,
+				quality: item.quality || "auto",
 			});
 			return;
 		}

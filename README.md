@@ -34,19 +34,26 @@
 ## Installation
 
 ### 1. Clone this repository
+
 ```bash
 git clone https://github.com/nat9h/Katscord.git
 cd Katscord
 ```
+
 ### 2. Install dependencies
+
 ```bash
 npm install
 ```
+
 ### 3. Configure environment variables
+
 ```bash
 cp .env.example .env
 ```
+
 ### 4. Edit the `.env` file with your credentials.
+
 ```bash
 USER_TOKEN="" # must using doubletick
 GUILD_ID=
@@ -55,15 +62,21 @@ TEXT_CHANNEL_ID=
 SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
 ```
+
 # Running the Bot
+
 ### Development
+
 ```bash
 npm run dev
 ```
+
 ### Production (PM2)
+
 ```bash
 npm run start:pm2
 ```
 
 # License
+
 This project is licensed under the MIT License - see the LICENSE file for details.

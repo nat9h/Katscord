@@ -1,141 +1,75 @@
-import { setTimeout as delay } from "node:timers/promises";
 import {
 	Encoders,
 	playStream,
 	prepareStream,
 	Utils,
 } from "@dank074/discord-video-stream";
+import BaseTransport from "#infra/transports/BaseTransport";
 
-export default class VideoTransport {
-	constructor({ streamer, client, ytdlpService, resolveTarget }) {
-		this.streamer = streamer;
-		this.client = client;
-		this.ytdlpService = ytdlpService;
-		this.resolveTarget = resolveTarget;
+const QUALITY_PRESETS = {
+	low: {
+		width: 854,
+		height: 480,
+		frameRate: 24,
+		bitrateVideo: 800,
+		bitrateVideoMax: 1200,
+		maxHeight: 480,
+		maxFps: 30,
+	},
+	medium: {
+		width: 1280,
+		height: 720,
+		frameRate: 30,
+		bitrateVideo: 2500,
+		bitrateVideoMax: 3500,
+		maxHeight: 720,
+		maxFps: 30,
+	},
+	high: {
+		width: 1920,
+		height: 1080,
+		frameRate: 30,
+		bitrateVideo: 4000,
+		bitrateVideoMax: 5000,
+		maxHeight: 1080,
+		maxFps: 30,
+	},
+};
+
+function normalizeQuality(value) {
+	const key = String(value || "auto").toLowerCase();
+	if (QUALITY_PRESETS[key]) {
+		return key;
+	}
+	return "auto";
+}
+
+export default class VideoTransport extends BaseTransport {
+	constructor({ streamer, ytdlpService, resolveTarget }) {
+		super({ streamer, ytdlpService, resolveTarget, label: "video" });
 
 		this.currentAbortController = null;
 		this.currentYtDlpProcess = null;
 		this.currentCommand = null;
-
-		this.activeSessionId = 0;
-		this.seekBase = 0;
-		this.startedAt = 0;
 	}
 
-	getTarget() {
-		const target = this.resolveTarget?.() || {};
-		const guildId = String(target.guildId || "").trim();
-		const voiceChannelId = String(target.voiceChannelId || "").trim();
+	resolveQualityPreset(quality, item) {
+		const normalized = normalizeQuality(quality);
 
-		if (!guildId || !voiceChannelId) {
-			throw new Error(
-				"Voice target is not configured. Use `config bot <voiceChannelId> [textChannelId]` first."
-			);
+		if (normalized !== "auto") {
+			return { name: normalized, preset: QUALITY_PRESETS[normalized] };
 		}
 
-		return { guildId, voiceChannelId };
-	}
+		const sourceHeight = Number(item?.sourceHeight) || 0;
 
-	isSameVoiceConnection(connection, target) {
-		if (!connection || !target) {
-			return false;
+		if (sourceHeight && sourceHeight <= 480) {
+			return { name: "low", preset: QUALITY_PRESETS.low };
+		}
+		if (sourceHeight && sourceHeight >= 1080) {
+			return { name: "high", preset: QUALITY_PRESETS.high };
 		}
 
-		return (
-			String(connection.guildId || "") === String(target.guildId || "") &&
-			String(connection.channelId || "") ===
-				String(target.voiceChannelId || "")
-		);
-	}
-
-	async ensureVoice() {
-		const target = this.getTarget();
-		const existing = this.streamer.voiceConnection;
-
-		if (this.isSameVoiceConnection(existing, target)) {
-			return existing;
-		}
-
-		if (existing) {
-			try {
-				this.streamer.stopStream();
-			} catch {}
-
-			try {
-				this.streamer.leaveVoice();
-			} catch {}
-
-			await delay(500);
-		}
-
-		console.log(
-			"[video] joining voice...",
-			target.guildId,
-			target.voiceChannelId
-		);
-		await this.streamer.joinVoice(target.guildId, target.voiceChannelId);
-
-		return this.streamer.voiceConnection;
-	}
-
-	getVoiceChannelBitrate() {
-		try {
-			const { voiceChannelId } = this.getTarget();
-			const channel =
-				this.client.channels.cache.get(voiceChannelId) || null;
-			return channel?.bitrate || 64000;
-		} catch {
-			return 64000;
-		}
-	}
-
-	getAdaptiveVideoOptions({ lowMotion = false } = {}) {
-		if (lowMotion) {
-			return {
-				width: 640,
-				height: 360,
-				frameRate: 12,
-				bitrateVideo: 250,
-				bitrateVideoMax: 350,
-			};
-		}
-
-		const channelBitrate = this.getVoiceChannelBitrate();
-		const maxVideoBitrate = Math.floor(channelBitrate * 0.8);
-		let bitrateVideo = Math.floor(maxVideoBitrate * 0.7);
-
-		bitrateVideo = Math.max(
-			300,
-			Math.min(Math.floor(bitrateVideo / 1000), 2500)
-		);
-
-		if (bitrateVideo < 500) {
-			return {
-				width: 640,
-				height: 360,
-				frameRate: 15,
-				bitrateVideo,
-				bitrateVideoMax: Math.floor(bitrateVideo * 1.2),
-			};
-		}
-
-		if (bitrateVideo < 1000) {
-			return {
-				width: 854,
-				height: 480,
-				frameRate: 24,
-				bitrateVideo,
-				bitrateVideoMax: Math.floor(bitrateVideo * 1.2),
-			};
-		}
-
-		return {
-			width: 1280,
-			height: 720,
-			frameRate: 30,
-			bitrateVideo,
-			bitrateVideoMax: Math.floor(bitrateVideo * 1.2),
-		};
+		return { name: "medium", preset: QUALITY_PRESETS.medium };
 	}
 
 	cleanupProcesses() {
@@ -170,24 +104,17 @@ export default class VideoTransport {
 		} catch {}
 
 		if (!keepVoice) {
-			try {
-				this.streamer.leaveVoice();
-			} catch {}
+			this.safeLeaveVoice();
 		}
 	}
 
 	async pause() {
-		const elapsed = Math.max(
-			0,
-			Math.floor((Date.now() - this.startedAt) / 1000)
-		);
-
-		const position = this.seekBase + elapsed;
+		const position = this.pausedPosition();
 		await this.stop({ keepVoice: true });
 		return position;
 	}
 
-	buildPrepareInput(item, seekSeconds) {
+	buildPrepareInput(item, seekSeconds, preset) {
 		if (item.source === "local") {
 			return {
 				input: item.localPath,
@@ -206,8 +133,9 @@ export default class VideoTransport {
 		const ytDlp = this.ytdlpService.createPlaybackProcess(item, {
 			mode: "video",
 			seekSeconds,
+			maxHeight: preset.maxHeight,
+			maxFps: preset.maxFps,
 		});
-
 		this.currentYtDlpProcess = ytDlp;
 
 		ytDlp.stderr.on("data", (chunk) => {
@@ -225,14 +153,14 @@ export default class VideoTransport {
 
 	async play(
 		item,
-		{ sessionId, seekSeconds = 0, volume = 1.0, lowMotion = false } = {}
+		{ sessionId, seekSeconds = 0, volume = 1.0, quality = "auto" } = {}
 	) {
 		this.activeSessionId = sessionId;
 		this.seekBase = seekSeconds;
 		this.startedAt = Date.now();
 
 		this.cleanupProcesses();
-		await this.ensureVoice();
+		await this.ensureVoice({ resetStream: true });
 
 		if (sessionId !== this.activeSessionId) {
 			return;
@@ -241,25 +169,32 @@ export default class VideoTransport {
 		const controller = new AbortController();
 		this.currentAbortController = controller;
 
-		const adaptive = this.getAdaptiveVideoOptions({ lowMotion });
-		const source = this.buildPrepareInput(item, seekSeconds);
+		const { name: qualityName, preset } = this.resolveQualityPreset(
+			quality,
+			item
+		);
+		console.log(
+			`[video] quality=${qualityName} ${preset.width}x${preset.height}@${preset.frameRate} ${preset.bitrateVideo}kbps`
+		);
+
+		const source = this.buildPrepareInput(item, seekSeconds, preset);
 		const safeVolume = Math.max(0, Number(volume) || 1);
 
 		const { command, output } = prepareStream(
 			source.input,
 			{
 				encoder: Encoders.software({
-					x264: { preset: "veryfast", tune: "zerolatency" },
-					x265: { preset: "veryfast", tune: "zerolatency" },
+					x264: { preset: "veryfast" },
+					x265: { preset: "veryfast" },
 				}),
-				width: adaptive.width,
-				height: adaptive.height,
-				frameRate: adaptive.frameRate,
-				bitrateVideo: adaptive.bitrateVideo,
-				bitrateVideoMax: adaptive.bitrateVideoMax,
-				bitrateAudio: 96,
+				width: preset.width,
+				height: preset.height,
+				frameRate: preset.frameRate,
+				bitrateVideo: preset.bitrateVideo,
+				bitrateVideoMax: preset.bitrateVideoMax,
+				bitrateAudio: 128,
 				includeAudio: true,
-				minimizeLatency: true,
+				minimizeLatency: false,
 				videoCodec: Utils.normalizeVideoCodec("H264"),
 				customInputOptions: source.customInputOptions,
 				customFfmpegFlags: ["-af", `volume=${safeVolume}`],

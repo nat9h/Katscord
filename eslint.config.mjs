@@ -19,6 +19,7 @@ export default [
 	{
 		rules: {
 			"no-control-regex": "off",
+			"no-empty": ["error", { allowEmptyCatch: true }],
 			curly: ["error"],
 			"no-else-return": ["error", { allowElseIf: false }],
 			quotes: ["error", "double", { avoidEscape: true }],
@@ -70,6 +71,7 @@ export default [
 					map: [
 						["#infra", "./src/infra"],
 						["#core", "./src/core"],
+						["#lib", "./src/lib"],
 						["#utils", "./src/utils"],
 						["#plugins", "./src/plugins"],
 					],

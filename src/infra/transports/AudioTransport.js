@@ -3,6 +3,7 @@ import { Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { demux } from "@dank074/discord-video-stream";
+import BaseTransport from "#infra/transports/BaseTransport";
 
 class OpusAudioWritable extends Writable {
 	constructor(conn) {
@@ -72,90 +73,13 @@ class OpusAudioWritable extends Writable {
 	}
 }
 
-export default class AudioTransport {
-	constructor({ streamer, client, ytdlpService, resolveTarget }) {
-		this.streamer = streamer;
-		this.client = client;
-		this.ytdlpService = ytdlpService;
-		this.resolveTarget = resolveTarget;
+export default class AudioTransport extends BaseTransport {
+	constructor({ streamer, ytdlpService, resolveTarget }) {
+		super({ streamer, ytdlpService, resolveTarget, label: "audio" });
 
 		this.currentYtDlpProcess = null;
 		this.currentFfmpegProcess = null;
 		this.currentAudioWritable = null;
-
-		this.activeSessionId = 0;
-		this.seekBase = 0;
-		this.startedAt = 0;
-	}
-
-	getTarget() {
-		const target = this.resolveTarget?.() || {};
-		const guildId = String(target.guildId || "").trim();
-		const voiceChannelId = String(target.voiceChannelId || "").trim();
-
-		if (!guildId || !voiceChannelId) {
-			throw new Error(
-				"Voice target is not configured. Use `config bot <voiceChannelId> [textChannelId]` first."
-			);
-		}
-
-		return { guildId, voiceChannelId };
-	}
-
-	isSameVoiceConnection(connection, target) {
-		if (!connection || !target) {
-			return false;
-		}
-
-		return (
-			String(connection.guildId || "") === String(target.guildId || "") &&
-			String(connection.channelId || "") ===
-				String(target.voiceChannelId || "")
-		);
-	}
-
-	async ensureVoice() {
-		const target = this.getTarget();
-		const existing = this.streamer.voiceConnection;
-
-		if (this.isSameVoiceConnection(existing, target)) {
-			return existing;
-		}
-
-		if (existing) {
-			try {
-				this.streamer.leaveVoice();
-			} catch (error) {
-				console.error("Leave voice error:", error);
-			}
-			await delay(500);
-		}
-
-		console.log(
-			"[audio] joining voice...",
-			target.guildId,
-			target.voiceChannelId
-		);
-		await this.streamer.joinVoice(target.guildId, target.voiceChannelId);
-
-		return this.streamer.voiceConnection;
-	}
-
-	async getBootstrappedConn(timeoutMs = 15000) {
-		const startedAt = Date.now();
-
-		while (Date.now() - startedAt < timeoutMs) {
-			const wrapper = this.streamer.voiceConnection?.webRtcConn;
-			const params = wrapper?.mediaConnection?.webRtcParams;
-
-			if (wrapper && params) {
-				return wrapper;
-			}
-
-			await delay(100);
-		}
-
-		return null;
 	}
 
 	async ensureBootstrappedConn() {
@@ -167,11 +91,7 @@ export default class AudioTransport {
 		}
 
 		console.warn("[audio] bootstrap timeout, retrying rejoin once...");
-
-		try {
-			this.streamer.leaveVoice();
-		} catch {}
-
+		this.safeLeaveVoice();
 		await delay(1000);
 		await this.ensureVoice();
 
@@ -220,19 +140,12 @@ export default class AudioTransport {
 		}
 
 		if (!keepVoice) {
-			try {
-				this.streamer.leaveVoice();
-			} catch {}
+			this.safeLeaveVoice();
 		}
 	}
 
 	async pause() {
-		const elapsed = Math.max(
-			0,
-			Math.floor((Date.now() - this.startedAt) / 1000)
-		);
-
-		const position = this.seekBase + elapsed;
+		const position = this.pausedPosition();
 		await this.stop({ keepVoice: true });
 		return position;
 	}
@@ -261,7 +174,6 @@ export default class AudioTransport {
 			mode: "audio",
 			seekSeconds,
 		});
-
 		this.currentYtDlpProcess = ytDlp;
 
 		const safeVolume = Math.max(0, Number(volume) || 1);
@@ -293,9 +205,7 @@ export default class AudioTransport {
 				"matroska",
 				"pipe:1",
 			],
-			{
-				stdio: ["pipe", "pipe", "pipe"],
-			}
+			{ stdio: ["pipe", "pipe", "pipe"] }
 		);
 
 		this.currentFfmpegProcess = ffmpeg;

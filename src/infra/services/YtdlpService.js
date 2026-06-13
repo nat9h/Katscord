@@ -139,6 +139,7 @@ export class YtdlpService {
 				title: info?.title || "Unknown Title",
 				duration: info?.duration || null,
 				thumbnail: info?.thumbnail || "",
+				height: info?.height || null,
 			};
 		});
 	}
@@ -182,16 +183,25 @@ export class YtdlpService {
 		);
 	}
 
-	createPlaybackProcess(item, { mode = "audio", seekSeconds = 0 } = {}) {
+	createPlaybackProcess(
+		item,
+		{ mode = "audio", seekSeconds = 0, maxHeight = 720, maxFps = 30 } = {}
+	) {
 		const input = this.resolvePlaybackInput(item);
 
 		if (!input) {
 			throw new Error("No playable input found for yt-dlp.");
 		}
 
+		const safeHeight = Math.max(
+			240,
+			Math.min(2160, Number(maxHeight) || 720)
+		);
+		const safeFps = Math.max(15, Math.min(60, Number(maxFps) || 30));
+
 		const format =
 			mode === "video"
-				? "bv*[ext=mp4][height<=720][fps<=30]+ba/b"
+				? `bv*[ext=mp4][height<=${safeHeight}][fps<=${safeFps}]+ba/b[height<=${safeHeight}]/b`
 				: "ba/best";
 
 		const args = [

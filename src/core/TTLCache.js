@@ -5,10 +5,7 @@ export default class TTLCache {
 	}
 
 	set(key, value, ttlMs = this.defaultTtlMs) {
-		this.store.set(key, {
-			value,
-			expiresAt: Date.now() + ttlMs,
-		});
+		this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
 		return value;
 	}
 
@@ -17,23 +14,19 @@ export default class TTLCache {
 		if (!entry) {
 			return null;
 		}
-
 		if (Date.now() >= entry.expiresAt) {
 			this.store.delete(key);
 			return null;
 		}
-
 		return entry.value;
 	}
 
 	has(key) {
 		return this.get(key) !== null;
 	}
-
 	delete(key) {
 		return this.store.delete(key);
 	}
-
 	clear() {
 		this.store.clear();
 	}
@@ -43,12 +36,10 @@ export default class TTLCache {
 		if (cached) {
 			return cached;
 		}
-
 		const value = await factory();
 		if (value) {
 			this.set(key, value, ttlMs);
 		}
-
 		return value;
 	}
 }

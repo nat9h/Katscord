@@ -1,6 +1,6 @@
 import path from "node:path";
 import { createContext } from "#core/createContext";
-import PluginManager from "#core/PluginManager";
+import PluginManager from "#core/plugins/PluginManager";
 
 export default class BotApp {
 	constructor(config) {
@@ -10,50 +10,46 @@ export default class BotApp {
 
 	async start() {
 		await this.ctx.bootstrap();
-
 		await this.pluginManager.loadFrom(
 			path.join(process.cwd(), "src", "plugins")
 		);
-
 		this.ctx.pluginManager = this.pluginManager;
 
 		this.registerClientEvents();
 		this.registerProcessEvents();
-
 		await this.ctx.client.login(this.ctx.token);
 	}
 
 	registerClientEvents() {
-		this.ctx.client.on("messageCreate", async (message) => {
+		const { client } = this.ctx;
+
+		client.on("messageCreate", async (message) => {
 			const consumed = await this.pluginManager.dispatchEvent(
 				"messageCreate",
 				[message]
 			);
-
-			if (consumed) {
-				return;
+			if (!consumed) {
+				await this.routeCommand(message);
 			}
-
-			await this.routeCommand(message);
 		});
 
-		this.ctx.client.on("channelDelete", (channel) => {
-			this.ctx.caches.channels.delete(channel.id);
-		});
-
-		this.ctx.client.on("guildDelete", async (guild) => {
+		client.on("channelDelete", (channel) =>
+			this.ctx.caches.channels.delete(channel.id)
+		);
+		client.on("guildDelete", async (guild) => {
 			this.ctx.caches.guilds.delete(guild.id);
+			this.purgeGuildJoinTimes(guild.id);
 			await this.ctx.sessionManager.removeSession(guild.id, {
 				destroy: true,
 			});
 		});
 
-		const eventNames = this.pluginManager
-			.getEventNames()
-			.filter((name) => name !== "messageCreate");
-
-		for (const eventName of eventNames) {
-			this.ctx.client.on(eventName, async (...args) => {
+		// Register all other plugin events
+		for (const eventName of this.pluginManager.getEventNames()) {
+			if (eventName === "messageCreate") {
+				continue;
+			}
+			client.on(eventName, async (...args) => {
 				await this.pluginManager.dispatchEvent(eventName, args);
 			});
 		}
@@ -63,7 +59,6 @@ export default class BotApp {
 		if (!message?.author?.id) {
 			return;
 		}
-
 		if (!this.ctx.isTrustedAuthor(message.author.id)) {
 			return;
 		}
@@ -72,23 +67,23 @@ export default class BotApp {
 		if (!parsed) {
 			return;
 		}
-
 		if (!this.ctx.isAllowedInConfiguredTextChannel(message)) {
 			return;
 		}
 
-		this.ctx.runtime.lastCommandChannelId = message.channel.id;
-		this.ctx.runtime.lastUsedPrefix = parsed.usedPrefix;
-
 		const session = this.ctx.getSessionForMessage(message, {
 			create: false,
 		});
+		await this.pluginManager.dispatchCommand({ message, parsed, session });
+	}
 
-		await this.pluginManager.dispatchCommand({
-			message,
-			parsed,
-			session,
-		});
+	purgeGuildJoinTimes(guildId) {
+		const prefix = `${guildId}:`;
+		for (const key of this.ctx.userJoinTimes.keys()) {
+			if (key.startsWith(prefix)) {
+				this.ctx.userJoinTimes.delete(key);
+			}
+		}
 	}
 
 	registerProcessEvents() {
@@ -97,29 +92,21 @@ export default class BotApp {
 				return;
 			}
 			this.ctx.runtime.isShuttingDown = true;
-
 			console.log("Shutting down...");
 
 			for (const session of this.ctx.sessionManager.listSessions()) {
 				try {
 					await session.destroy();
-				} catch (error) {
-					console.error(
-						"Failed to destroy session during shutdown:",
-						error
-					);
+				} catch (e) {
+					console.error("Session destroy error:", e);
 				}
 			}
 
 			try {
 				await this.ctx.client.destroy();
-			} catch (error) {
-				console.error(
-					"Failed to destroy session during shutdown:",
-					error
-				);
+			} catch (e) {
+				console.error("Client destroy error:", e);
 			}
-
 			process.exit(0);
 		};
 

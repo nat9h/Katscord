@@ -28,11 +28,15 @@ class CookieJar {
 		for (const raw of Array.isArray(rawHeaders)
 			? rawHeaders
 			: [rawHeaders]) {
-			if (!raw) continue;
+			if (!raw) {
+				continue;
+			}
 
 			const [nameVal, ...attrs] = raw.split(";").map((s) => s.trim());
 			const eqIdx = nameVal.indexOf("=");
-			if (eqIdx === -1) continue;
+			if (eqIdx === -1) {
+				continue;
+			}
 
 			const meta = {
 				value: nameVal.slice(eqIdx + 1).trim(),
@@ -48,23 +52,29 @@ class CookieJar {
 			for (const attr of attrs) {
 				const lower = attr.toLowerCase();
 
-				if (lower === "httponly") meta.httpOnly = true;
-				else if (lower === "secure") meta.secure = true;
-				else if (lower.startsWith("samesite="))
+				if (lower === "httponly") {
+					meta.httpOnly = true;
+				} else if (lower === "secure") {
+					meta.secure = true;
+				} else if (lower.startsWith("samesite=")) {
 					meta.sameSite = attr.split("=")[1]?.toLowerCase() ?? "lax";
-				else if (lower.startsWith("path="))
+				} else if (lower.startsWith("path=")) {
 					meta.path = attr.split("=")[1] ?? "/";
-				else if (lower.startsWith("domain="))
+				} else if (lower.startsWith("domain=")) {
 					meta.domain = (attr.split("=")[1] ?? CONFIG.host).replace(
 						/^\./,
 						""
 					);
-				else if (lower.startsWith("expires=")) {
+				} else if (lower.startsWith("expires=")) {
 					const date = new Date(attr.slice(8));
-					if (!Number.isNaN(date.getTime())) meta.expires = date;
+					if (!Number.isNaN(date.getTime())) {
+						meta.expires = date;
+					}
 				} else if (lower.startsWith("max-age=")) {
 					const maxAge = Number.parseInt(attr.slice(8), 10);
-					if (!Number.isNaN(maxAge)) meta.maxAge = maxAge;
+					if (!Number.isNaN(maxAge)) {
+						meta.maxAge = maxAge;
+					}
 				}
 			}
 
@@ -142,9 +152,15 @@ function getDecodedStream(res) {
 	const encoding = String(
 		res.headers["content-encoding"] || ""
 	).toLowerCase();
-	if (encoding.includes("br")) return res.pipe(createBrotliDecompress());
-	if (encoding.includes("gzip")) return res.pipe(createGunzip());
-	if (encoding.includes("deflate")) return res.pipe(createInflate());
+	if (encoding.includes("br")) {
+		return res.pipe(createBrotliDecompress());
+	}
+	if (encoding.includes("gzip")) {
+		return res.pipe(createGunzip());
+	}
+	if (encoding.includes("deflate")) {
+		return res.pipe(createInflate());
+	}
 	return res;
 }
 
@@ -174,7 +190,9 @@ function httpsRequest(options, body) {
 		req.setTimeout(CONFIG.timeout.http, () =>
 			req.destroy(new Error("Request timeout"))
 		);
-		if (body) req.write(body);
+		if (body) {
+			req.write(body);
+		}
 		req.end();
 	});
 }
@@ -191,7 +209,9 @@ function parseSSEChunk(buffer, events) {
 			.join("\n")
 			.trim();
 
-		if (!payload || payload === "[DONE]") continue;
+		if (!payload || payload === "[DONE]") {
+			continue;
+		}
 
 		try {
 			events.push(JSON.parse(payload));
@@ -244,7 +264,9 @@ function sseRequest(options, body, onEvent) {
 		req.setTimeout(CONFIG.timeout.sse, () =>
 			req.destroy(new Error("SSE timeout"))
 		);
-		if (body) req.write(body);
+		if (body) {
+			req.write(body);
+		}
 		req.end();
 	});
 }
@@ -274,7 +296,9 @@ async function initSession(cookieJar) {
 		},
 	});
 
-	if (res.headers["set-cookie"]) cookieJar.ingest(res.headers["set-cookie"]);
+	if (res.headers["set-cookie"]) {
+		cookieJar.ingest(res.headers["set-cookie"]);
+	}
 
 	return {
 		endpoint: `${CONFIG.origin}/en`,
@@ -293,7 +317,9 @@ async function getAuthSession(cookieJar, traceId) {
 		headers: buildCommonHeaders(cookieJar, traceId),
 	});
 
-	if (res.headers["set-cookie"]) cookieJar.ingest(res.headers["set-cookie"]);
+	if (res.headers["set-cookie"]) {
+		cookieJar.ingest(res.headers["set-cookie"]);
+	}
 
 	const parsed = safeJsonParse(res.raw);
 
@@ -321,7 +347,9 @@ async function getGeoCurrency(cookieJar, traceId) {
 		}),
 	});
 
-	if (res.headers["set-cookie"]) cookieJar.ingest(res.headers["set-cookie"]);
+	if (res.headers["set-cookie"]) {
+		cookieJar.ingest(res.headers["set-cookie"]);
+	}
 
 	return {
 		endpoint: `${CONFIG.origin}/api/geo/currency`,
@@ -357,7 +385,9 @@ async function registerFingerprint(cookieJar, traceId) {
 		payload
 	);
 
-	if (res.headers["set-cookie"]) cookieJar.ingest(res.headers["set-cookie"]);
+	if (res.headers["set-cookie"]) {
+		cookieJar.ingest(res.headers["set-cookie"]);
+	}
 
 	return {
 		endpoint: `${CONFIG.origin}/api/v/fingerprint`,
@@ -416,7 +446,9 @@ function parseSSEEvents(events) {
 				break;
 			case "data-usage":
 				result.usage = ev.data ?? null;
-				if (ev.data?.modelId) result.model = ev.data.modelId;
+				if (ev.data?.modelId) {
+					result.model = ev.data.modelId;
+				}
 				break;
 			default:
 				break;
@@ -466,7 +498,9 @@ async function sendChat(
 		(ev) => rawEvents.push(ev)
 	);
 
-	if (res.headers["set-cookie"]) cookieJar.ingest(res.headers["set-cookie"]);
+	if (res.headers["set-cookie"]) {
+		cookieJar.ingest(res.headers["set-cookie"]);
+	}
 
 	return {
 		endpoint: `${CONFIG.origin}/api/chat`,
@@ -499,7 +533,9 @@ async function getVotes(cookieJar, traceId, chatId) {
 		headers: buildCommonHeaders(cookieJar, traceId),
 	});
 
-	if (res.headers["set-cookie"]) cookieJar.ingest(res.headers["set-cookie"]);
+	if (res.headers["set-cookie"]) {
+		cookieJar.ingest(res.headers["set-cookie"]);
+	}
 
 	const parsed = safeJsonParse(res.raw);
 

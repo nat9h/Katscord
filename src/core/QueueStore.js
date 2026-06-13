@@ -1,4 +1,3 @@
-// TODO: using queuestore to handling request per-user.
 export default class QueueStore {
 	constructor() {
 		this.items = [];
@@ -10,22 +9,18 @@ export default class QueueStore {
 	}
 
 	addMany(items = []) {
-		if (!Array.isArray(items) || items.length === 0) {
-			return this.size();
+		if (Array.isArray(items) && items.length > 0) {
+			this.items.push(...items);
 		}
-
-		this.items.push(...items);
 		return this.size();
 	}
 
 	next() {
 		return this.items.shift() || null;
 	}
-
 	peek() {
 		return this.items[0] || null;
 	}
-
 	getAll() {
 		return [...this.items];
 	}
@@ -34,7 +29,6 @@ export default class QueueStore {
 		if (!Number.isInteger(index) || index < 0) {
 			return null;
 		}
-
 		return this.items[index] || null;
 	}
 
@@ -46,9 +40,7 @@ export default class QueueStore {
 		) {
 			return null;
 		}
-
-		const [removed] = this.items.splice(index, 1);
-		return removed || null;
+		return this.items.splice(index, 1)[0] || null;
 	}
 
 	clear() {
@@ -56,30 +48,28 @@ export default class QueueStore {
 		this.items = [];
 		return count;
 	}
-
 	size() {
 		return this.items.length;
 	}
-
 	isEmpty() {
 		return this.items.length === 0;
 	}
 
-	move(fromIndex, toIndex) {
+	move(from, to) {
+		if (!Number.isInteger(from) || !Number.isInteger(to)) {
+			return false;
+		}
 		if (
-			!Number.isInteger(fromIndex) ||
-			!Number.isInteger(toIndex) ||
-			fromIndex < 0 ||
-			toIndex < 0 ||
-			fromIndex >= this.items.length ||
-			toIndex >= this.items.length ||
-			fromIndex === toIndex
+			from < 0 ||
+			to < 0 ||
+			from >= this.items.length ||
+			to >= this.items.length ||
+			from === to
 		) {
 			return false;
 		}
-
-		const [item] = this.items.splice(fromIndex, 1);
-		this.items.splice(toIndex, 0, item);
+		const [item] = this.items.splice(from, 1);
+		this.items.splice(to, 0, item);
 		return true;
 	}
 
@@ -88,7 +78,6 @@ export default class QueueStore {
 			const j = Math.floor(Math.random() * (i + 1));
 			[this.items[i], this.items[j]] = [this.items[j], this.items[i]];
 		}
-
 		return this.getAll();
 	}
 
