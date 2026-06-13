@@ -2,8 +2,6 @@
  * Shared playback state utilities: pending interactions, queue item builders, option parsing.
  */
 
-// --- Pending Interactions ---
-
 function getPendingKey(channelId, authorId) {
 	return `${channelId}:${authorId}`;
 }
@@ -104,8 +102,6 @@ export function isPendingInputMessage(type, input) {
 	}
 }
 
-// --- Option Parsing ---
-
 const BOOLEAN_FLAGS = {
 	video: ["-video", "--video", "-v"],
 	audio: ["-audio", "--audio", "-music", "-a"],
@@ -135,7 +131,6 @@ export function extractPlayOptions(args = []) {
 
 		let matchedValueFlag = null;
 		for (const [name, candidates] of Object.entries(VALUE_FLAGS)) {
-			// Form: --quality=high
 			const eqMatch = candidates.find((flag) =>
 				token.toLowerCase().startsWith(`${flag}=`)
 			);
@@ -151,7 +146,6 @@ export function extractPlayOptions(args = []) {
 				break;
 			}
 
-			// Form: --quality high
 			if (matchFlag(token, candidates)) {
 				const next = (args[i + 1] || "").toLowerCase();
 				if (name === "quality" && VALID_QUALITIES.has(next)) {
@@ -208,8 +202,6 @@ export function parseModeInput(input) {
 	}
 	return null;
 }
-
-// --- Queue Item Builders ---
 
 export function buildSpotifyQueueItem(track) {
 	return {
